@@ -1,49 +1,32 @@
+# app/models.py
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 class LabResults(BaseModel):
-    # 일반 혈액/생화학/염증
-    ast: Optional[float] = None
-    alt: Optional[float] = None
-    ggt: Optional[float] = None
-    ferritin: Optional[float] = None
-    fibrinogen: Optional[float] = None
-    homa_ir: Optional[float] = None
-    vitamin_d: Optional[float] = None # ng/mL
-    zinc: Optional[float] = None      # mcg/dL
-    
-    # 호르몬/부신
-    cortisol_8am: Optional[float] = None
-    dhea_s: Optional[float] = None
-    total_testosterone: Optional[float] = None # ng/mL
-    lh: Optional[float] = None
-    
-    # 모발 미네랄 및 중금속
+    # 기존 지표
+    fecal_calprotectin: Optional[float] = None
     ca_mg_ratio: Optional[float] = None
-    na_k_ratio: Optional[float] = None
-    na_mg_ratio: Optional[float] = None
-    mercury_hg: Optional[float] = None
-    lead_pb: Optional[float] = None
+    total_testosterone: Optional[float] = None
+    lh: Optional[float] = None
+    vitamin_d: Optional[float] = None
+    nk_activity: Optional[float] = None
     
-    # 특수 기능의학 검사
-    nk_activity: Optional[float] = None       # pg/mL
-    fecal_calprotectin: Optional[float] = None # mg/kg
-    sibo_hydrogen_peak: Optional[float] = None # ppm
-    sibo_methane_peak: Optional[float] = None  # ppm
-    cac_agaston_score: Optional[float] = None  # 심장 CT 관상동맥 석회화
+    # ➕ 신규 추가: 심혈관/대사/메틸레이션 지표
+    homocysteine: Optional[float] = Field(None, description="Serum Homocysteine (umol/L)")
+    fasting_glucose: Optional[float] = Field(None, description="공복 혈당 (mg/dL)")
+    fasting_insulin: Optional[float] = Field(None, description="공복 인슐린 (uIU/mL)")
+    homa_ir: Optional[float] = Field(None, description="인슐린 저항성 지수 HOMA-IR")
+    hs_crp: Optional[float] = Field(None, description="고감도 CRP (mg/L)")
 
 class PatientAnalysisRequest(BaseModel):
-    patient_id: str = Field(..., example="PT-2026-001")
-    age: int = Field(..., example=48)
-    gender: str = Field(..., example="M") # "M" or "F"
-    chief_complaints: List[str] = Field(
-        ..., 
-        example=["만성피로", "식후 복부팽만", "기립성 어지럼", "원인불명 두드러기", "의욕저하 및 성기능 저하"]
-    )
-    labs: LabResults
+    patient_id: str
+    age: int
+    gender: str
+    chief_complaints: List[str]
+    labs: Optional[LabResults] = None
 
 class PrescriptionItem(BaseModel):
-    category: str # "IVNT", "ORAL_RX", "SUPPLEMENT"
+    category: str
     name: str
     dosage: str
     usage: str
@@ -54,8 +37,8 @@ class ImpressionResult(BaseModel):
     rank: int
     category_name: str
     score: float
-    pathophysiology: str
-    matching_evidence: List[str]
+    pathophysiology: Optional[str] = ""
+    matching_evidence: List[str] = []
 
 class AnalysisResponse(BaseModel):
     patient_id: str
