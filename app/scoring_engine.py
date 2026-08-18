@@ -1,90 +1,150 @@
+# app/scoring_engine.py
 from typing import Dict, List, Tuple, Any
 from app.models import LabResults
 
-class FunctionalScoringEngine:
-    """
-    《진료실에 두고 보는 실전 기능의학》 Part 1~3 임상 지표 기반 점수화
-    """
-    
-    @staticmethod
-    def evaluate(symptoms: List[str], labs: LabResults, gender: str) -> List[Dict[str, Any]]:
-        scores = {
-            "SIBO_GUT_DYSBIOSIS": {"score": 0, "evidence": [], "name": "소장내 세균 과증식(SIBO) 및 장 점막 염증"},
-            "ADRENAL_EXHAUSTION": {"score": 0, "evidence": [], "name": "부신 피로 및 HPA 축 기능부전"},
-            "HISTAMINE_INTOLERANCE": {"score": 0, "evidence": [], "name": "비알레르기성 히스타민 증후군 및 장투과성 이상"},
-            "IMMUNE_NK_DEFICIENCY": {"score": 0, "evidence": [], "name": "NK 세포 활성 저하 및 면역 조절 부전 (롱코비드 포함)"},
-            "MALE_HYPOGONADISM": {"score": 0, "evidence": [], "name": "남성 갱년기 및 성선 기능 저하증"},
-            "CARDIO_VASCULAR_CAC": {"score": 0, "evidence": [], "name": "칼슘 패러독스 및 관상동맥 석회화(CAC) 위험"}
+class FunctionalMedicineScoringEngine:
+    def __init__(self):
+        # 기능의학적 최적 밴드 기준
+        self.OPTIMAL_RANGES = {
+            "homocysteine_optimal": 8.0,      # > 9.0부터 메틸레이션 결손/혈관독성 경고
+            "homocysteine_high": 12.0,        # > 12.0 고위험
+            "homa_ir_optimal": 1.5,           # > 2.0 인슐린 저항성 시작
+            "homa_ir_high": 2.5,              # > 2.5 뚜렷한 대사증후군/당뇨 전단계
+            "hs_crp_optimal": 0.5,            # > 1.0 전신 미세염증
+            "calprotectin_optimal": 11.5,
+            "ca_mg_optimal_high": 10.0,
+            "total_testosterone_low": 3.5,
+            "vitamin_d_optimal": 40.0,
+            "nk_activity_optimal": 500.0,
+            "nk_activity_borderline": 330.0
         }
 
-        # 1. SIBO & 장 점막
-        if any(s in ["식후 복부팽만", "만성 설사", "만성 변비", "복부 가스", "소화불량"] for s in symptoms):
-            scores["SIBO_GUT_DYSBIOSIS"]["score"] += 35
-            scores["SIBO_GUT_DYSBIOSIS"]["evidence"].append("주소증: 위장관 소화불량 및 팽만감 호소")
-        if labs.fecal_calprotectin and labs.fecal_calprotectin > 11.5:
-            scores["SIBO_GUT_DYSBIOSIS"]["score"] += 35
-            scores["SIBO_GUT_DYSBIOSIS"]["evidence"].append(f"Calprotectin {labs.fecal_calprotectin} mg/kg (>11.5) 장점막 염증 확인")
-        if (labs.sibo_hydrogen_peak and labs.sibo_hydrogen_peak >= 20) or (labs.sibo_methane_peak and labs.sibo_methane_peak >= 10):
-            scores["SIBO_GUT_DYSBIOSIS"]["score"] += 40
-            scores["SIBO_GUT_DYSBIOSIS"]["evidence"].append("호기검사상 수소/메탄 가스 이상 증폭")
+    def evaluate(self, complaints: List[str], labs: LabResults) -> List[Dict[str, Any]]:
+        categories = {
+            # ➕ 신규 카테고리: 대사증후군 및 인슐린 저항성
+            "INSULIN_RESISTANCE_METABOLIC": {
+                "name": "인슐린 저항성 및 대사 증후군 (HOMA-IR 상승)",
+                "score": 0.0,
+                "evidence": []
+            },
+            # ➕ 신규 카테고리: 고호모시스테인혈증 및 메틸레이션 장애
+            "METHYLATION_DEFECT_VASCULAR": {
+                "name": "고호모시스테인혈증 및 혈관 내피세포 독성 (메틸레이션 결손)",
+                "score": 0.0,
+                "evidence": []
+            },
+            # 기존 카테고리들
+            "SIBO_GUT_DYSBIOSIS": {
+                "name": "소장내 세균 과증식(SIBO) 및 장 점막 염증",
+                "score": 0.0,
+                "evidence": []
+            },
+            "ADRENAL_EXHAUSTION": {
+                "name": "부신 피로 및 HPA 축 기능부전",
+                "score": 0.0,
+                "evidence": []
+            },
+            "MALE_HYPOGONADISM": {
+                "name": "남성 갱년기 및 성선 기능 저하증",
+                "score": 0.0,
+                "evidence": []
+            },
+            "IMMUNE_NK_DEFICIENCY": {
+                "name": "NK 세포 활성 저하 및 면역 조절 부전",
+                "score": 0.0,
+                "evidence": []
+            }
+        }
 
-        # 2. 부신 피로 & 미네랄 불균형
-        if any(s in ["만성피로", "기립성 어지럼", "오후 방전", "수면장애"] for s in symptoms):
-            scores["ADRENAL_EXHAUSTION"]["score"] += 30
-            scores["ADRENAL_EXHAUSTION"]["evidence"].append("주소증: 만성 피로 및 기립성 증상")
-        if labs.ca_mg_ratio and labs.ca_mg_ratio > 9.5:
-            scores["ADRENAL_EXHAUSTION"]["score"] += 35
-            scores["ADRENAL_EXHAUSTION"]["evidence"].append(f"모발 Ca/Mg 비 {labs.ca_mg_ratio} (Calcium Shell/만성 스트레스 패턴)")
-        if labs.cortisol_8am and labs.cortisol_8am < 10.0:
-            scores["ADRENAL_EXHAUSTION"]["score"] += 30
-            scores["ADRENAL_EXHAUSTION"]["evidence"].append(f"혈청 아침 Cortisol {labs.cortisol_8am} mcg/dL (부신 3단계 소진 상태)")
+        # ----------------------------------------------------
+        # 1. HOMA-IR 인슐린 저항성 평가
+        # ----------------------------------------------------
+        calc_homa_ir = None
+        if labs and labs.homa_ir is not None:
+            calc_homa_ir = labs.homa_ir
+        elif labs and labs.fasting_glucose and labs.fasting_insulin:
+            # HOMA-IR 자동 계산 공식: (Glucose * Insulin) / 405
+            calc_homa_ir = round((labs.fasting_glucose * labs.fasting_insulin) / 405.0, 2)
 
-        # 3. 비알레르기성 히스타민
-        if any(s in ["원인불명 두드러기", "가려움", "홍조", "브레인포그"] for s in symptoms):
-            scores["HISTAMINE_INTOLERANCE"]["score"] += 35
-            scores["HISTAMINE_INTOLERANCE"]["evidence"].append("주소증: 두드러기, 가려움 및 신경 증상 동반")
-        if labs.zinc and labs.zinc < 75:
-            scores["HISTAMINE_INTOLERANCE"]["score"] += 20
-            scores["HISTAMINE_INTOLERANCE"]["evidence"].append(f"혈청 아연 {labs.zinc} mcg/dL 저하 (점막/면역 방어선 약화)")
-
-        # 4. 면역 & NK 활성
-        if any(s in ["롱코비드", "잦은 감기", "구강 궤양", "대상포진"] for s in symptoms):
-            scores["IMMUNE_NK_DEFICIENCY"]["score"] += 35
-            scores["IMMUNE_NK_DEFICIENCY"]["evidence"].append("주소증: 잦은 감염 및 바이러스 후유증")
-        if labs.nk_activity and labs.nk_activity < 330:
-            scores["IMMUNE_NK_DEFICIENCY"]["score"] += 45
-            scores["IMMUNE_NK_DEFICIENCY"]["evidence"].append(f"NK 세포 활성도 {labs.nk_activity} pg/mL (경계/저하 상태)")
-        if labs.vitamin_d and labs.vitamin_d < 20:
-            scores["IMMUNE_NK_DEFICIENCY"]["score"] += 20
-            scores["IMMUNE_NK_DEFICIENCY"]["evidence"].append(f"비타민 D {labs.vitamin_d} ng/mL 결핍")
-
-        # 5. 남성 갱년기 (남성 한정)
-        if gender.upper() == "M":
-            if any(s in ["의욕저하 및 성기능 저하", "복부비만", "근력저하"] for s in symptoms):
-                scores["MALE_HYPOGONADISM"]["score"] += 30
-                scores["MALE_HYPOGONADISM"]["evidence"].append("주소증: 남성 갱년기 증상군 호소")
-            if labs.total_testosterone and labs.total_testosterone < 3.5:
-                scores["MALE_HYPOGONADISM"]["score"] += 50
-                subtype = "1차성(LH상승)" if (labs.lh and labs.lh > 8.0) else "2차성/스트레스성(LH정상/저하)"
-                scores["MALE_HYPOGONADISM"]["evidence"].append(
-                    f"총 테스토스테론 {labs.total_testosterone} ng/mL (<3.5) 확인 -> {subtype}"
+        if calc_homa_ir:
+            if calc_homa_ir >= self.OPTIMAL_RANGES["homa_ir_high"]:
+                categories["INSULIN_RESISTANCE_METABOLIC"]["score"] += 60.0
+                categories["INSULIN_RESISTANCE_METABOLIC"]["evidence"].append(
+                    f"HOMA-IR {calc_homa_ir} (>=2.5 고위험 인슐린 저항성 확인)"
+                )
+            elif calc_homa_ir >= self.OPTIMAL_RANGES["homa_ir_optimal"]:
+                categories["INSULIN_RESISTANCE_METABOLIC"]["score"] += 40.0
+                categories["INSULIN_RESISTANCE_METABOLIC"]["evidence"].append(
+                    f"HOMA-IR {calc_homa_ir} (기능의학 최적 기준 1.5 초과)"
                 )
 
-        # 6. CAC & 칼슘 침착
-        if labs.cac_agaston_score and labs.cac_agaston_score > 50:
-            scores["CARDIO_VASCULAR_CAC"]["score"] += 60
-            scores["CARDIO_VASCULAR_CAC"]["evidence"].append(
-                f"심장 CT Agaston Score {labs.cac_agaston_score} (관상동맥 석회화 진행 확인)"
+        # ----------------------------------------------------
+        # 2. 호모시스테인 및 메틸레이션 평가
+        # ----------------------------------------------------
+        if labs and labs.homocysteine:
+            if labs.homocysteine >= self.OPTIMAL_RANGES["homocysteine_high"]:
+                categories["METHYLATION_DEFECT_VASCULAR"]["score"] += 65.0
+                categories["METHYLATION_DEFECT_VASCULAR"]["evidence"].append(
+                    f"Serum Homocysteine {labs.homocysteine} umol/L (>=12.0 심혈관/뇌혈관 고위험 밴드)"
+                )
+            elif labs.homocysteine >= self.OPTIMAL_RANGES["homocysteine_optimal"]:
+                categories["METHYLATION_DEFECT_VASCULAR"]["score"] += 40.0
+                categories["METHYLATION_DEFECT_VASCULAR"]["evidence"].append(
+                    f"Serum Homocysteine {labs.homocysteine} umol/L (기능의학 최적치 8.0 초과, 메틸레이션 저하)"
+                )
+
+        # ----------------------------------------------------
+        # 3. hs-CRP 미세염증 복합 가산
+        # ----------------------------------------------------
+        if labs and labs.hs_crp and labs.hs_crp >= self.OPTIMAL_RANGES["hs_crp_optimal"]:
+            categories["INSULIN_RESISTANCE_METABOLIC"]["score"] += 15.0
+            categories["METHYLATION_DEFECT_VASCULAR"]["score"] += 15.0
+            categories["INSULIN_RESISTANCE_METABOLIC"]["evidence"].append(
+                f"hs-CRP {labs.hs_crp} mg/L (혈관 전신 미세염증 동반)"
             )
 
-        # 점수 기준 내림차순 정렬
-        sorted_results = []
-        for key, data in sorted(scores.items(), key=lambda x: x[1]["score"], reverse=True):
-            if data["score"] > 25: # 유의미한 점수만 추출
-                sorted_results.append({
-                    "code": key,
+        # ----------------------------------------------------
+        # 4. 주소증 가산
+        # ----------------------------------------------------
+        for symptom in complaints:
+            if any(k in symptom for k in ["체중증가", "복부비만", "식곤증", "당뇨", "지방간"]):
+                categories["INSULIN_RESISTANCE_METABOLIC"]["score"] += 25.0
+                categories["INSULIN_RESISTANCE_METABOLIC"]["evidence"].append(f"주소증: {symptom} (대사 이상 시그널)")
+            
+            if any(k in symptom for k in ["가슴답답", "두통", "브레인포그", "기억력저하", "혈액순환"]):
+                categories["METHYLATION_DEFECT_VASCULAR"]["score"] += 20.0
+                categories["METHYLATION_DEFECT_VASCULAR"]["evidence"].append(f"주소증: {symptom} (혈관/신경 염증 소견)")
+
+            # 기존 주소증 로직
+            if any(k in symptom for k in ["복부팽만", "가스", "소화불량", "설사"]):
+                categories["SIBO_GUT_DYSBIOSIS"]["score"] += 20.0
+            if any(k in symptom for k in ["피로", "어지럼", "기립성"]):
+                categories["ADRENAL_EXHAUSTION"]["score"] += 20.0
+            if any(k in symptom for k in ["성기능", "의욕저하", "근력감소"]):
+                categories["MALE_HYPOGONADISM"]["score"] += 25.0
+
+        # 기존 검사 지표 평가 (Calprotectin, Ca/Mg, Testosterone 등)
+        if labs:
+            if labs.fecal_calprotectin and labs.fecal_calprotectin > self.OPTIMAL_RANGES["calprotectin_optimal"]:
+                categories["SIBO_GUT_DYSBIOSIS"]["score"] += 50.0
+                categories["SIBO_GUT_DYSBIOSIS"]["evidence"].append(f"Calprotectin {labs.fecal_calprotectin} mg/kg 장점막 염증")
+            if labs.ca_mg_ratio and labs.ca_mg_ratio > self.OPTIMAL_RANGES["ca_mg_optimal_high"]:
+                categories["ADRENAL_EXHAUSTION"]["score"] += 45.0
+                categories["ADRENAL_EXHAUSTION"]["evidence"].append(f"Ca/Mg 비 {labs.ca_mg_ratio} (Calcium Shell/만성 스트레스)")
+            if labs.total_testosterone and labs.total_testosterone < self.OPTIMAL_RANGES["total_testosterone_low"]:
+                categories["MALE_HYPOGONADISM"]["score"] += 55.0
+                categories["MALE_HYPOGONADISM"]["evidence"].append(f"Total Testosterone {labs.total_testosterone} ng/mL 저하")
+
+        # 점수 기준 정렬 및 상위 항목 추출
+        results = []
+        for code, data in categories.items():
+            if data["score"] > 0:
+                results.append({
+                    "code": code,
                     "category_name": data["name"],
-                    "score": data["score"],
+                    "score": min(data["score"], 100.0),
                     "evidence": data["evidence"]
                 })
-        return sorted_results
+
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results
